@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>ESP8266 ↔ Firebase</title>
+
+  <!-- Font Awesome (için) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" integrity="sha512-ZulbXJpY2dXluQCFwCjS3KrwWz4Uu9og8AEdDhF7tNkYcE2iIy+L2Hl4R26Gn+1E5Pw== crossorigin='anonymous' referrerpolicy='no-referrer' />
+
+  <style>
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      background:#f5f5f5; text-align:center;
+    }
+    h1 { color:#333; margin-top:20px; }
+
+    .status-container {
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      width: 100%;
+    }
+    #relayA, #relayB {
+      margin-bottom: 10px;
+    }
+    button {
+      padding:8px 16px;
+      font-size:1.2rem;
+      border:none;
+      background:#4CAF50; /* Güzel yeşil */
+      color:white;
+      cursor:pointer;
+    }
+    .active { background:#f44336 !important; } /* red if relay is ON */
+
+    #info {
+      margin-top:20px;
+      font-size:1.1rem;
+      color:#555;
+    }
+
+    @keyframes flash {
+      0%   {background:#ff9;}
+      50%  {background:#fff;}
+      100% {background:#ff9;}
+    }
+    .flashing { animation:flash 2s infinite; }
+  </style>
+</head>
+
+<body>
+  <h1>ESP8266 ↔ Firebase Relay Kontrolü</h1>
+  <p><strong>Sensor Durumu:</strong> <span id="sensorValue">...wait...</span></p>
+
+  <!-- Relais kontrol butonları -->
+  <div class="status-container">
+    <button id="relayA" onclick="toggleRelay(0)">Relay A → Aç</button>
+    <button id="relayB" onclick="toggleRelay(1)">Relay B → Kapat</button>
+  </div>
+
+  <!-- Durum duyurusu -->
+  <div id="info"></div>
+
+  <!-- Firebase SDK (https://firebase.google.com/docs/web/setup) -->
+  <script src="https://www.gstatic.com/firebasejs/10.17.4/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.17.4/firebase-database.js"></script>
+  <script>
+    // Firebase projeniz için aşağıdaki değerleri yerine koyun
+    const FIREBASE_PROJECT_ID = "sizezin-firebase-project";
+    const API_KEY            = "A<KEY>";
+    const DATABASE_URL       = `https://${FIREBASE_PROJECT_ID}.firebaseio.com`;
+
+    // Firebase ile bağlantı kuruyoruz
+    let firebaseApp = null;
+    function initFirebase() {
+      firebaseApp = firebase.initializeApp({
+        apiKey: API_KEY,
+        authDomain: FIREBASE_PROJECT_ID + ".firebaseapp.com",
+        databaseURL: DATABASE_URL,
+        projectId: FIREBASE_PROJECT_ID,
+        storageBucket: "",
+        messagingSenderId: "0", // (gerekliyse) sorunsuz çalışır
+        appId: "0"              // (gerekliyse)
+      });
+    }
+
+    // Relay kontrolünü yöneten fonksiyon – firebaseData görevinde kullanılacak
+    let relayState = false; // false = Relay A/KAPALI → Relay B açık
+
+    function toggleRelay(pin) {
+      const newState = !relayState;
+      relayState = newState;
+
+      // Firebase’da yalnızca o pinin değerini güncelleriz
+      firebaseApp.database().ref(`sensor/${pin}`).set(newState ? "AC" : "KAPALI");
+
+      updateUI();
+    }
+
+    function updateUI() {
+      // Firebase’tan son değeri alıyoruz
+      const sensorRef = firebaseApp.database().ref("sensor");
+      sensorRef.on('value', snap => {
+        const value = snap.val();
+
+        // UI’ya göre işleme (relais aç/kapat)
+        if(value === "AC") {
+          // Relay A açılıyor
+          document.getElementById('relayA').classList.add('flashing');
+          setTimeout(() => { document.getElementById('relayA').classList.remove('flashing'); }, 1000);
+          // Relay B’yi kapat (mola etmek için)
+          toggleRelay(1); // yapmak istediğinizse bu satırdan vazgeç
+        } else if(value === "KAPALI") {
+          document.getElementById('relayB').classList.add('flashing');
+          setTimeout(() => { document.getElementById('relayB').classList.remove('flashing'); }, 1000);
+        } else {
+          // Beklenmeyen değer, her iki relay’i kapat
+          toggleRelay(0);   // Relay A aç
+          toggleRelay(1);   // Relay B kapat
+        }
+
+        document.getElementById('sensorValue').textContent = value || "...";
+
+        // UI’yı güncelle (veya yan yana)
+        updateStatusMessage();
+      });
+
+      sensorRef.off(); // olayları daha sonra tekrar bağlama için hazır
+    }
+
+    function updateStatusMessage() {
+      const msgEl = document.getElementById('info');
+      if(relayState) {
+        msgEl.textContent = "Relay A açık.";
+      } else {
+        msgEl.textContent = "Relay B açık.";
+      }
+    }
+
+    // Firebase bağlantısını başlatıyoruz
+    initFirebase();
+
+    // Başlangıç güncellemesi (ilk değer)
+    updateUI();
+  </script>
+</body>
+</html>
