@@ -2,146 +2,881 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8">
-  <title>ESP8266 ↔ Firebase</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESP8266 IoT Akıllı Lamba & Röle Kontrolü</title>
 
-  <!-- Font Awesome (için) -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" integrity="sha512-ZulbXJpY2dXluQCFwCjS3KrwWz4Uu9og8AEdDhF7tNkYcE2iIy+L2Hl4R26Gn+1E5Pw== crossorigin='anonymous' referrerpolicy='no-referrer' />
+  <!-- Google Fonts & Font Awesome -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
   <style>
+    :root {
+      --bg-primary: #0b0f19;
+      --bg-secondary: #111827;
+      --bg-card: rgba(17, 24, 39, 0.75);
+      --bg-glass: rgba(31, 41, 55, 0.5);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-glow: rgba(56, 189, 248, 0.25);
+      
+      --text-primary: #f9fafb;
+      --text-secondary: #9ca3af;
+      --text-muted: #6b7280;
+
+      --accent-glow: #38bdf8;
+      --accent-green: #10b981;
+      --accent-red: #ef4444;
+      --accent-yellow: #f59e0b;
+      --lamp-glow-color: rgba(251, 191, 36, 0.45);
+      --lamp-on-color: #fbbf24;
+      --lamp-off-color: #4b5563;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+
     body {
-      font-family: Arial, Helvetica, sans-serif;
-      background:#f5f5f5; text-align:center;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: radial-gradient(circle at 50% 0%, #1e293b 0%, #0b0f19 75%);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+      overflow-x: hidden;
     }
-    h1 { color:#333; margin-top:20px; }
 
-    .status-container {
-      display:flex;
-      flex-direction:column;
-      align-items:center;
+    /* Arka plan ışık efekti */
+    .ambient-glow {
+      position: fixed;
+      top: -120px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 600px;
+      height: 350px;
+      background: radial-gradient(circle, var(--lamp-glow-color) 0%, rgba(0,0,0,0) 70%);
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.15;
+      transition: opacity 0.6s ease, transform 0.6s ease;
+    }
+    body.is-lit .ambient-glow {
+      opacity: 0.85;
+      transform: translateX(-50%) scale(1.15);
+    }
+
+    .container {
       width: 100%;
-    }
-    #relayA, #relayB {
-      margin-bottom: 10px;
-    }
-    button {
-      padding:8px 16px;
-      font-size:1.2rem;
-      border:none;
-      background:#4CAF50; /* Güzel yeşil */
-      color:white;
-      cursor:pointer;
-    }
-    .active { background:#f44336 !important; } /* red if relay is ON */
-
-    #info {
-      margin-top:20px;
-      font-size:1.1rem;
-      color:#555;
+      max-width: 960px;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
     }
 
-    @keyframes flash {
-      0%   {background:#ff9;}
-      50%  {background:#fff;}
-      100% {background:#ff9;}
+    /* Başlık Alanı */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border-color);
+      flex-wrap: wrap;
+      gap: 1rem;
     }
-    .flashing { animation:flash 2s infinite; }
+
+    .logo-area {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .logo-badge {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #0284c7, #38bdf8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 15px rgba(2, 132, 199, 0.4);
+      font-size: 1.25rem;
+      color: #fff;
+    }
+
+    .logo-text h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .logo-text p {
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+    }
+
+    .server-status {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      padding: 0.45rem 0.9rem;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      backdrop-filter: blur(8px);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-red);
+      box-shadow: 0 0 8px var(--accent-red);
+      transition: background 0.3s, box-shadow 0.3s;
+    }
+    .status-dot.online {
+      background: var(--accent-green);
+      box-shadow: 0 0 10px var(--accent-green);
+      animation: pulse-green 2s infinite;
+    }
+
+    @keyframes pulse-green {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(1.2); }
+    }
+
+    /* Uyarı Banner'ı (Sunucu yoksa) */
+    .alert-banner {
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+      padding: 0.85rem 1.25rem;
+      border-radius: 12px;
+      font-size: 0.875rem;
+      display: none;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .alert-banner.show {
+      display: flex;
+    }
+    .alert-banner code {
+      background: rgba(0,0,0,0.3);
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace;
+      color: #fff;
+    }
+
+    /* Ana Grid */
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 768px) {
+      .dashboard-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Kartlar */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 18px;
+      padding: 1.5rem;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .card-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* Ampul Görsel Alanı */
+    .lamp-display-card {
+      align-items: center;
+      text-align: center;
+      justify-content: center;
+      min-height: 320px;
+    }
+
+    .lamp-graphic-container {
+      position: relative;
+      width: 140px;
+      height: 140px;
+      margin: 1rem auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .lamp-halo {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(251, 191, 36, 0.45) 0%, rgba(251, 191, 36, 0) 70%);
+      transform: scale(0.6);
+      opacity: 0;
+      transition: all 0.5s ease;
+      filter: blur(10px);
+    }
+    body.is-lit .lamp-halo {
+      opacity: 1;
+      transform: scale(1.6);
+    }
+
+    .bulb-icon {
+      font-size: 5.5rem;
+      color: var(--lamp-off-color);
+      position: relative;
+      z-index: 2;
+      transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    body.is-lit .bulb-icon {
+      color: var(--lamp-on-color);
+      filter: drop-shadow(0 0 25px rgba(251, 191, 36, 0.85)) drop-shadow(0 0 50px rgba(245, 158, 11, 0.4));
+      transform: scale(1.06);
+    }
+
+    .lamp-state-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.35rem 1rem;
+      border-radius: 9999px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+      transition: all 0.3s;
+    }
+    body.is-lit .lamp-state-badge {
+      background: rgba(16, 185, 129, 0.15);
+      border-color: rgba(16, 185, 129, 0.4);
+      color: #34d399;
+      box-shadow: 0 0 15px rgba(16, 185, 129, 0.2);
+    }
+
+    /* Ana Lamba Butonu */
+    .master-switch-btn {
+      margin-top: 1.5rem;
+      width: 100%;
+      padding: 0.95rem 1.5rem;
+      border-radius: 14px;
+      border: none;
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: white;
+      background: linear-gradient(135deg, #2563eb, #0284c7);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      box-shadow: 0 4px 15px rgba(37, 99, 235, 0.35);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .master-switch-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.5);
+    }
+    .master-switch-btn:active {
+      transform: translateY(0);
+    }
+    body.is-lit .master-switch-btn {
+      background: linear-gradient(135deg, #dc2626, #ef4444);
+      box-shadow: 0 4px 15px rgba(220, 38, 38, 0.35);
+    }
+    body.is-lit .master-switch-btn:hover {
+      box-shadow: 0 6px 20px rgba(220, 38, 38, 0.5);
+    }
+
+    /* Röle Kontrol Listesi */
+    .relays-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+    }
+
+    .relay-item {
+      background: var(--bg-glass);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 0.9rem 1.15rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: border-color 0.25s, background 0.25s;
+    }
+    .relay-item:hover {
+      border-color: rgba(255, 255, 255, 0.15);
+      background: rgba(31, 41, 55, 0.7);
+    }
+    .relay-item.active {
+      border-color: rgba(16, 185, 129, 0.4);
+      background: rgba(16, 185, 129, 0.08);
+    }
+
+    .relay-info {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+    }
+    .relay-icon-box {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      transition: all 0.3s;
+    }
+    .relay-item.active .relay-icon-box {
+      background: rgba(16, 185, 129, 0.2);
+      color: #34d399;
+    }
+
+    .relay-texts h3 {
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+    .relay-texts p {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    /* Modern Toggle Butonları */
+    .btn-toggle {
+      padding: 0.5rem 1rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-primary);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: all 0.2s;
+    }
+    .btn-toggle:hover {
+      background: rgba(255, 255, 255, 0.12);
+    }
+    .relay-item.active .btn-toggle {
+      background: #ef4444;
+      border-color: #ef4444;
+      color: white;
+      box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+    }
+    .relay-item:not(.active) .btn-toggle {
+      background: #10b981;
+      border-color: #10b981;
+      color: white;
+      box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+    }
+
+    /* Canlı JSON Görüntüleyici Kartı */
+    .json-card {
+      grid-column: 1 / -1;
+    }
+
+    .json-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.85rem;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .json-badge {
+      font-size: 0.75rem;
+      font-family: 'JetBrains Mono', monospace;
+      padding: 0.2rem 0.6rem;
+      border-radius: 6px;
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .code-container {
+      background: #060910;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.25rem;
+      position: relative;
+      overflow-x: auto;
+    }
+
+    .code-container pre {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      line-height: 1.6;
+      color: #e2e8f0;
+      margin: 0;
+    }
+
+    .json-highlight-flash {
+      animation: json-flash 0.8s ease-out;
+    }
+    @keyframes json-flash {
+      0% { background: rgba(56, 189, 248, 0.25); }
+      100% { background: #060910; }
+    }
+
+    /* ESP8266 Bağlantı Rehberi */
+    .iot-guide-card {
+      grid-column: 1 / -1;
+      background: linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.7));
+      border: 1px solid rgba(56, 189, 248, 0.2);
+    }
+
+    .guide-content {
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+      font-size: 0.88rem;
+      color: var(--text-secondary);
+    }
+
+    .endpoint-box {
+      display: flex;
+      align-items: center;
+      background: #070c14;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 0.6rem 0.9rem;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .endpoint-url {
+      font-family: 'JetBrains Mono', monospace;
+      color: #38bdf8;
+      word-break: break-all;
+    }
+
+    .btn-copy {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      transition: background 0.2s;
+    }
+    .btn-copy:hover {
+      background: rgba(255, 255, 255, 0.16);
+    }
+
+    /* Bildirim Toast */
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      background: #1f2937;
+      border: 1px solid var(--border-color);
+      color: white;
+      padding: 0.75rem 1.25rem;
+      border-radius: 10px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      font-size: 0.875rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      opacity: 0;
+      transform: translateY(20px);
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 1000;
+      pointer-events: none;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* JSON Renklendirme */
+    .json-key { color: #38bdf8; }
+    .json-string { color: #34d399; }
+    .json-boolean-true { color: #10b981; font-weight: bold; }
+    .json-boolean-false { color: #f87171; font-weight: bold; }
   </style>
 </head>
 
 <body>
-  <h1>ESP8266 ↔ Firebase Relay Kontrolü</h1>
-  <p><strong>Sensor Durumu:</strong> <span id="sensorValue">...wait...</span></p>
+  <!-- Arka plan ambiyans parıltısı -->
+  <div class="ambient-glow" id="ambientGlow"></div>
 
-  <!-- Relais kontrol butonları -->
-  <div class="status-container">
-    <button id="relayA" onclick="toggleRelay(0)">Relay A → Aç</button>
-    <button id="relayB" onclick="toggleRelay(1)">Relay B → Kapat</button>
+  <div class="container">
+    <!-- Üst Başlık & Durum Çubuğu -->
+    <header>
+      <div class="logo-area">
+        <div class="logo-badge">
+          <i class="fa-solid fa-bolt"></i>
+        </div>
+        <div class="logo-text">
+          <h1>IoT Lamba Kontrol Paneli</h1>
+          <p>ESP8266 & Yerel JSON Durum Yönetimi</p>
+        </div>
+      </div>
+
+      <div class="server-status" id="serverStatusBox">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">Sunucuya Bağlanıyor...</span>
+      </div>
+    </header>
+
+    <!-- Sunucu Çalışmıyor Uyarısı -->
+    <div class="alert-banner" id="alertBanner">
+      <i class="fa-solid fa-triangle-exclamation" style="font-size: 1.2rem;"></i>
+      <div>
+        <strong>Yerel Sunucuya Ulaşılamadı:</strong> Sayfa doğrudan dosya olarak açılmış. <code>data.json</code> dosyasının fiziksel olarak diske yazılması için klasördeki <code>baslat.bat</code> dosyasını çalıştırın veya terminalde <code>python server.py</code> komutunu verin.
+      </div>
+    </div>
+
+    <!-- Kontrol Paneli Grid -->
+    <div class="dashboard-grid">
+      
+      <!-- 1. Görsel Lamba Kartı -->
+      <div class="card lamp-display-card">
+        <div class="card-title">
+          <i class="fa-regular fa-lightbulb"></i> Ana Aydınlatma Durumu
+        </div>
+
+        <div class="lamp-graphic-container">
+          <div class="lamp-halo"></div>
+          <i class="fa-solid fa-lightbulb bulb-icon" id="bulbGraphic"></i>
+        </div>
+
+        <div>
+          <span class="lamp-state-badge" id="lampBadge">
+            <i class="fa-solid fa-circle" style="font-size: 0.55rem;"></i>
+            <span id="lampBadgeText">KAPALI</span>
+          </span>
+        </div>
+
+        <button class="master-switch-btn" id="masterSwitchBtn" onclick="toggleDevice('lamba')">
+          <i class="fa-solid fa-power-off"></i>
+          <span id="masterBtnText">Lambayı Aç</span>
+        </button>
+      </div>
+
+      <!-- 2. Röle Kontrol Kartı -->
+      <div class="card">
+        <div class="card-title">
+          <i class="fa-solid fa-sliders"></i> Donanım Röleleri (ESP8266 Pinteri)
+        </div>
+
+        <div class="relays-list">
+          <!-- Röle A (Lamba ile senkron) -->
+          <div class="relay-item" id="relayItemA">
+            <div class="relay-info">
+              <div class="relay-icon-box">
+                <i class="fa-solid fa-plug"></i>
+              </div>
+              <div class="relay-texts">
+                <h3>Röle A (Lamba)</h3>
+                <p>Pin D1 (GPIO5) &bull; Durum: <span id="relayAStatus">Kapalı</span></p>
+              </div>
+            </div>
+            <button class="btn-toggle" onclick="toggleDevice('relayA')" id="btnRelayA">
+              <i class="fa-solid fa-power-off"></i> Aç
+            </button>
+          </div>
+
+          <!-- Röle B (Bağımsız Kanal) -->
+          <div class="relay-item" id="relayItemB">
+            <div class="relay-info">
+              <div class="relay-icon-box">
+                <i class="fa-solid fa-toggle-on"></i>
+              </div>
+              <div class="relay-texts">
+                <h3>Röle B (Yardımcı Kanal)</h3>
+                <p>Pin D2 (GPIO4) &bull; Durum: <span id="relayBStatus">Kapalı</span></p>
+              </div>
+            </div>
+            <button class="btn-toggle" onclick="toggleDevice('relayB')" id="btnRelayB">
+              <i class="fa-solid fa-power-off"></i> Aç
+            </button>
+          </div>
+        </div>
+
+        <div style="margin-top: 1.25rem; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
+          <i class="fa-solid fa-info-circle"></i> Butonlara her basıldığında projedeki <strong>data.json</strong> dosyasındaki ilgili değişken anlık olarak değişir ve diske kaydedilir.
+        </div>
+      </div>
+
+      <!-- 3. Canlı JSON Görüntüleyici -->
+      <div class="card json-card">
+        <div class="json-header">
+          <div class="card-title" style="margin-bottom: 0;">
+            <i class="fa-solid fa-code"></i> Canlı data.json İzleyici
+          </div>
+          <div class="json-badge">
+            <i class="fa-solid fa-clock-rotate-left"></i> Son Kayıt: <span id="jsonLastUpdated">-</span>
+          </div>
+        </div>
+
+        <div class="code-container" id="codeContainer">
+          <pre id="jsonViewer">// data.json yükleniyor...</pre>
+        </div>
+      </div>
+
+      <!-- 4. ESP8266 Entegrasyon Kartı -->
+      <div class="card iot-guide-card">
+        <div class="card-title">
+          <i class="fa-solid fa-microchip"></i> ESP8266 Mikrokontrolcü Entegrasyonu
+        </div>
+        <div class="guide-content">
+          <p>ESP8266 modülünüz Firebase yerine doğrudan yerel ağınızdaki bu JSON dosyasını okuyarak lamba durumunu takip eder:</p>
+          
+          <div class="endpoint-box">
+            <span class="endpoint-url" id="endpointUrlDisplay">http://localhost:8000/data.json</span>
+            <button class="btn-copy" onclick="copyEndpoint()">
+              <i class="fa-regular fa-copy"></i> Kopyala
+            </button>
+          </div>
+
+          <p style="font-size: 0.82rem; color: var(--text-muted); margin-top: 0.25rem;">
+            İpucu: Bilgisayarınızın yerel IP adresi (örn. <code>192.168.1.xxx:8000/data.json</code>) ile ESP8266 kodunuzdan HTTP GET yaparak <code>lamba</code> anahtarını kontrol edebilirsiniz.
+          </p>
+        </div>
+      </div>
+
+    </div>
   </div>
 
-  <!-- Durum duyurusu -->
-  <div id="info"></div>
+  <!-- Toast Bildirim -->
+  <div class="toast" id="toast">
+    <i class="fa-solid fa-check-circle" style="color: #10b981;"></i>
+    <span id="toastMsg">İşlem başarıyla gerçekleşti.</span>
+  </div>
 
-  <!-- Firebase SDK (https://firebase.google.com/docs/web/setup) -->
-  <script src="https://www.gstatic.com/firebasejs/10.17.4/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.17.4/firebase-database.js"></script>
   <script>
-    // Firebase projeniz için aşağıdaki değerleri yerine koyun
-    const FIREBASE_PROJECT_ID = "sizezin-firebase-project";
-    const API_KEY            = "A<KEY>";
-    const DATABASE_URL       = `https://${FIREBASE_PROJECT_ID}.firebaseio.com`;
+    // Yerel sunucu API adresleri
+    const API_BASE = window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:8000';
+    const API_STATUS = `${API_BASE}/data.json`;
+    const API_TOGGLE = `${API_BASE}/api/toggle`;
 
-    // Firebase ile bağlantı kuruyoruz
-    let firebaseApp = null;
-    function initFirebase() {
-      firebaseApp = firebase.initializeApp({
-        apiKey: API_KEY,
-        authDomain: FIREBASE_PROJECT_ID + ".firebaseapp.com",
-        databaseURL: DATABASE_URL,
-        projectId: FIREBASE_PROJECT_ID,
-        storageBucket: "",
-        messagingSenderId: "0", // (gerekliyse) sorunsuz çalışır
-        appId: "0"              // (gerekliyse)
+    let currentState = {
+      lamba: false,
+      relayA: false,
+      relayB: false,
+      durum: "KAPALI",
+      son_guncelleme: "-"
+    };
+
+    let isServerOnline = false;
+
+    // Toast bildirimi göster
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      document.getElementById('toastMsg').textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2500);
+    }
+
+    // Endpoint URL kopyalama
+    function copyEndpoint() {
+      const url = document.getElementById('endpointUrlDisplay').textContent;
+      navigator.clipboard.writeText(url).then(() => {
+        showToast("JSON URL'i panoya kopyalandı!");
+      }).catch(() => {
+        showToast("URL kopyalanamadı.");
       });
     }
 
-    // Relay kontrolünü yöneten fonksiyon – firebaseData görevinde kullanılacak
-    let relayState = false; // false = Relay A/KAPALI → Relay B açık
-
-    function toggleRelay(pin) {
-      const newState = !relayState;
-      relayState = newState;
-
-      // Firebase’da yalnızca o pinin değerini güncelleriz
-      firebaseApp.database().ref(`sensor/${pin}`).set(newState ? "AC" : "KAPALI");
-
-      updateUI();
-    }
-
-    function updateUI() {
-      // Firebase’tan son değeri alıyoruz
-      const sensorRef = firebaseApp.database().ref("sensor");
-      sensorRef.on('value', snap => {
-        const value = snap.val();
-
-        // UI’ya göre işleme (relais aç/kapat)
-        if(value === "AC") {
-          // Relay A açılıyor
-          document.getElementById('relayA').classList.add('flashing');
-          setTimeout(() => { document.getElementById('relayA').classList.remove('flashing'); }, 1000);
-          // Relay B’yi kapat (mola etmek için)
-          toggleRelay(1); // yapmak istediğinizse bu satırdan vazgeç
-        } else if(value === "KAPALI") {
-          document.getElementById('relayB').classList.add('flashing');
-          setTimeout(() => { document.getElementById('relayB').classList.remove('flashing'); }, 1000);
-        } else {
-          // Beklenmeyen değer, her iki relay’i kapat
-          toggleRelay(0);   // Relay A aç
-          toggleRelay(1);   // Relay B kapat
+    // Syntax-highlighted JSON render
+    function formatJsonSyntax(jsonObj) {
+      const jsonStr = JSON.stringify(jsonObj, null, 2);
+      return jsonStr.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+        let cls = 'json-number';
+        if (/^"/.test(match)) {
+          if (/:$/.test(match)) {
+            cls = 'json-key';
+          } else {
+            cls = 'json-string';
+          }
+        } else if (/true/.test(match)) {
+          cls = 'json-boolean-true';
+        } else if (/false/.test(match)) {
+          cls = 'json-boolean-false';
         }
-
-        document.getElementById('sensorValue').textContent = value || "...";
-
-        // UI’yı güncelle (veya yan yana)
-        updateStatusMessage();
+        return `<span class="${cls}">${match}</span>`;
       });
-
-      sensorRef.off(); // olayları daha sonra tekrar bağlama için hazır
     }
 
-    function updateStatusMessage() {
-      const msgEl = document.getElementById('info');
-      if(relayState) {
-        msgEl.textContent = "Relay A açık.";
+    // Arayüzü güncelle
+    function renderUI(data) {
+      currentState = data;
+
+      // 1. Gövde sınıfı (Ambient glow & lamp)
+      const isLit = Boolean(data.lamba);
+      if (isLit) {
+        document.body.classList.add('is-lit');
       } else {
-        msgEl.textContent = "Relay B açık.";
+        document.body.classList.remove('is-lit');
+      }
+
+      // 2. Lamba Rozeti ve Butonu
+      const lampBadgeText = document.getElementById('lampBadgeText');
+      const masterBtnText = document.getElementById('masterBtnText');
+      if (isLit) {
+        lampBadgeText.textContent = "AÇIK (AKTİF)";
+        masterBtnText.textContent = "Lambayı Kapat";
+      } else {
+        lampBadgeText.textContent = "KAPALI";
+        masterBtnText.textContent = "Lambayı Aç";
+      }
+
+      // 3. Röle A
+      const relayItemA = document.getElementById('relayItemA');
+      const relayAStatus = document.getElementById('relayAStatus');
+      const btnRelayA = document.getElementById('btnRelayA');
+      if (data.relayA) {
+        relayItemA.classList.add('active');
+        relayAStatus.textContent = "Açık";
+        btnRelayA.innerHTML = '<i class="fa-solid fa-power-off"></i> Kapat';
+      } else {
+        relayItemA.classList.remove('active');
+        relayAStatus.textContent = "Kapalı";
+        btnRelayA.innerHTML = '<i class="fa-solid fa-power-off"></i> Aç';
+      }
+
+      // 4. Röle B
+      const relayItemB = document.getElementById('relayItemB');
+      const relayBStatus = document.getElementById('relayBStatus');
+      const btnRelayB = document.getElementById('btnRelayB');
+      if (data.relayB) {
+        relayItemB.classList.add('active');
+        relayBStatus.textContent = "Açık";
+        btnRelayB.innerHTML = '<i class="fa-solid fa-power-off"></i> Kapat';
+      } else {
+        relayItemB.classList.remove('active');
+        relayBStatus.textContent = "Kapalı";
+        btnRelayB.innerHTML = '<i class="fa-solid fa-power-off"></i> Aç';
+      }
+
+      // 5. JSON Görüntüleyici
+      const jsonViewer = document.getElementById('jsonViewer');
+      jsonViewer.innerHTML = formatJsonSyntax(data);
+      document.getElementById('jsonLastUpdated').textContent = data.son_guncelleme || new Date().toLocaleTimeString();
+
+      // Flash efekti
+      const codeContainer = document.getElementById('codeContainer');
+      codeContainer.classList.remove('json-highlight-flash');
+      void codeContainer.offsetWidth; // trigger reflow
+      codeContainer.classList.add('json-highlight-flash');
+    }
+
+    // Cihaz durumunu değiştir (Lamba / Röle)
+    async function toggleDevice(targetName) {
+      if (!isServerOnline) {
+        // Fallback: Sunucu kapalıysa arayüzde simüle et ve uyar
+        const nextState = !currentState[targetName];
+        currentState[targetName] = nextState;
+        if (targetName === 'lamba') {
+          currentState.relayA = nextState;
+          currentState.durum = nextState ? "ACIK" : "KAPALI";
+        }
+        currentState.son_guncelleme = new Date().toLocaleString('tr-TR');
+        renderUI(currentState);
+        showToast("Sunucu kapalı: Simülasyon modunda güncellendi.");
+        return;
+      }
+
+      try {
+        const response = await fetch(API_TOGGLE, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ target: targetName })
+        });
+
+        if (!response.ok) throw new Error('API Hatası');
+        const updatedData = await response.json();
+        renderUI(updatedData);
+        showToast(`${targetName.toUpperCase()} güncellendi -> data.json kaydedildi.`);
+      } catch (err) {
+        console.error("Güncelleme hatası:", err);
+        showToast("Hata: Değer güncellenemedi!");
       }
     }
 
-    // Firebase bağlantısını başlatıyoruz
-    initFirebase();
+    // Sunucudan veri çekme (Polling)
+    async function fetchStatus() {
+      try {
+        const res = await fetch(API_STATUS, { cache: 'no-cache' });
+        if (!res.ok) throw new Error('Ağ yanıtı olumsuz');
+        const data = await res.json();
+        
+        if (!isServerOnline) {
+          isServerOnline = true;
+          document.getElementById('statusDot').classList.add('online');
+          document.getElementById('statusText').textContent = "Sunucu Bağlı (8000)";
+          document.getElementById('alertBanner').classList.remove('show');
+          
+          // Endpoint URL'sini dinamik güncelle
+          const host = window.location.hostname || 'localhost';
+          const port = window.location.port || '8000';
+          document.getElementById('endpointUrlDisplay').textContent = `http://${host}:${port}/data.json`;
+        }
 
-    // Başlangıç güncellemesi (ilk değer)
-    updateUI();
+        // Eğer verilerde değişiklik varsa UI'ı güncelle
+        if (JSON.stringify(data) !== JSON.stringify(currentState)) {
+          renderUI(data);
+        }
+      } catch (err) {
+        if (isServerOnline || document.getElementById('statusText').textContent === "Sunucuya Bağlanıyor...") {
+          isServerOnline = false;
+          document.getElementById('statusDot').classList.remove('online');
+          document.getElementById('statusText').textContent = "Sunucu Bağlantısı Yok";
+          document.getElementById('alertBanner').classList.add('show');
+        }
+      }
+    }
+
+    // İlk yükleme ve periyodik senkronizasyon
+    fetchStatus();
+    setInterval(fetchStatus, 1500);
   </script>
 </body>
 </html>
